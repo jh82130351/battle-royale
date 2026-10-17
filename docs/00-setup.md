@@ -18,33 +18,51 @@
 | 배포 경로 | `https://valuetopic.com/game/br/` (계획) |
 | 공개 범위 | public (앞선 두 레포와 동일) |
 
-### ⚠ 레포를 아직 못 만들었다
-```
-$ gh repo create battle-royale --public
-GraphQL: Resource not accessible by personal access token (createRepository)
-```
-서버 PAT에 **레포 생성(Administration) 권한이 없다.**
+### ⚠ 레포를 아직 못 만들었다 (토큰 교체 후에도)
 
-헷갈리기 쉬운 점을 적어 둔다. `gh api` 로 물어보면 이렇게 답한다:
-```
-land-grab-game     push=true admin=true
-fps-prototype      push=true admin=true
-```
-그런데 **fps-prototype 은 실제로 푸시가 안 된다**(403, 커밋 6개가 로컬에 쌓여 있다).
-`gh api` 가 말하는 건 **계정 권한**이고, 막는 건 **토큰에 선택된 레포 목록**이다.
-그래서 권한 확인은 `git push` 로 직접 해야 한다.
+2026-10-17 에 새 토큰을 받아 교체했다. **푸시는 풀렸고 레포 생성만 여전히 막힌다.**
 
-**정현님께 부탁드릴 것 — 둘 중 하나:**
-1. **웹에서 직접 레포를 만들어 주신다** (github.com → New repository → `battle-royale`, Public,
-   README·.gitignore·license **전부 체크 해제**). 그러면 제가 바로 푸시한다.
-   로컬 커밋과 원격 주소는 이미 맞춰 뒀다.
-2. **토큰을 고쳐 주신다** — fps-prototype 도 같이 풀린다.
-   Settings → Developer settings → Fine-grained tokens → 해당 토큰
-   - Repository access: **All repositories** (또는 battle-royale·fps-prototype 추가)
-   - Permissions → Repository → **Administration: Read and write** (레포 생성용)
-   - Permissions → Repository → **Contents: Read and write** (푸시용)
+| 동작 | 옛 토큰 | 새 토큰 |
+| --- | --- | --- |
+| land-grab-game 푸시 | OK | OK |
+| **fps-prototype 푸시** | **403** | **OK — 밀려 있던 커밋 6개 올렸다** |
+| 레포 목록 읽기 | OK | OK |
+| **레포 생성** | **403** | **403** |
+| 레포 admin 읽기 | 403 | **403** |
 
-**2번을 권한다.** fps-prototype 커밋 6개가 같은 이유로 2주째 묶여 있다.
+```
+$ gh api /user/repos -X POST -f name=...
+{"message":"Resource not accessible by personal access token","status":"403"}
+```
+
+**원인은 하나다 — 토큰에 `Administration` 권한이 없다.**
+`Contents` 는 들어왔다(그래서 푸시가 된다). 레포를 만드는 건 `Contents` 가 아니라
+`Administration` 이 하는 일이다. 같은 이유로 레포 설정 읽기도 403 이 난다.
+
+**정현님께 — 둘 중 하나만 해 주시면 끝난다.**
+
+1. **웹에서 레포만 만들어 주신다 (30초, 지금 제일 빠름)**
+   github.com → New repository → 이름 `battle-royale` → **Public** →
+   **Add a README / .gitignore / license 전부 체크 해제** → Create.
+   그러면 제가 바로 푸시한다. 로컬 커밋과 원격 주소는 맞춰 뒀다.
+   *(체크를 풀어야 하는 이유: 원격에 커밋이 하나라도 있으면 제 로컬 커밋과 갈라져
+   merge 를 해야 한다. 빈 레포여야 그대로 올라간다.)*
+
+2. **토큰에 권한을 하나 더 주신다**
+   Settings → Developer settings → Fine-grained tokens → 해당 토큰 →
+   Permissions → Repository → **Administration: Read and write**
+   앞으로 레포를 또 만들 때도 제가 직접 할 수 있다.
+
+**1번을 권한다.** 지금 필요한 건 레포 하나뿐이고, 토큰에 Administration 을 주는 건
+그 토큰으로 레포 삭제·공개범위 변경까지 가능해진다는 뜻이라 굳이 열 이유가 없다.
+
+### 🔑 토큰은 쓰고 나서 갈아 주셔야 한다
+새 토큰을 **대화창에 직접 붙여 넣어 주셨다.** 그 값은 이 대화 기록에 그대로 남는다.
+작업이 끝나면 **해당 토큰을 폐기(revoke)하고 새로 발급**해 주시는 편이 안전하다.
+앞으로는 토큰을 보내실 일이 있으면 서버에서 `gh auth login` 을 직접 돌리시는 쪽이 낫다.
+
+(CLAUDE.md 9번 4항 "크리덴셜을 코드에 넣지 마라" 와 같은 맥락이다.
+이번 토큰은 **레포 안 어디에도 쓰지 않았다** — `gh` 키링에만 넣었다.)
 
 ---
 
@@ -182,19 +200,16 @@ git push -u origin main                    # ← 레포가 생겨야 된다
 
 **1번 하나만 막혀 있다. 나머지는 확정안으로 다 채웠다.**
 
-1. **레포를 만들어 주셔야 푸시가 된다.** 둘 중 하나다.
-   - **(권장) 토큰 수정** — fps-prototype 커밋 6개도 같이 풀린다.
-     Fine-grained token → Repository access **All repositories**,
-     Permissions → **Administration: Read and write** + **Contents: Read and write**
-   - **웹에서 직접 생성** — `battle-royale`, Public, README·.gitignore·license **전부 체크 해제**.
-     바로 푸시한다. 다만 fps-prototype 은 계속 막힌 채다.
-2. **레포 이름** `battle-royale` 로 굳혀도 되는지 (가칭이라 하셨다). 지금 바꾸는 게 제일 싸다.
-3. **01 을 바로 시작해도 되는지.** 기본안이 확정됐으니 막는 건 없다.
+1. **레포를 만들어 주셔야 푸시가 된다.** 새 토큰으로도 생성만 막힌다 (1번 표).
+   **웹에서 빈 레포 하나만 만들어 주시면 된다** — 30초다. 그게 제일 빠르다.
+2. **토큰을 갈아 주셔야 한다.** 대화창에 붙여 넣은 값이라 기록에 남는다 (1번).
+3. **레포 이름** `battle-royale` 로 굳혀도 되는지 (가칭이라 하셨다). 지금 바꾸는 게 제일 싸다.
+4. **01 을 바로 시작해도 되는지.** 기본안이 확정됐으니 막는 건 없다.
    레포 생성과 무관하게 `br/index.html` 작업은 로컬에서 진행 가능하다.
 
 ## 11. 남은 이슈
-- **레포 생성 막힘** (10번 1).
-- fps-prototype 커밋 6개가 여전히 푸시 안 됨 (같은 토큰 문제).
+- **레포 생성 막힘** (10번 1) — 토큰에 `Administration` 이 없다.
+- ~~fps-prototype 커밋 6개 푸시 안 됨~~ → **2026-10-17 해결.** 새 토큰으로 `f00ee6f` 까지 올렸다.
 - FPS Builder 멀티가 Firebase Auth 미설정으로 동작하지 않음 (별도 지시 대기 중).
 - **05 온라인 단계에서 WS 서버 포트·경로 결정 필요** (3번). 프로덕션 작업이라 그때 지시를 받는다.
 - **16인 여부는 05 에서 성능 보고 결정.** 01~04 는 8인 기준으로 짠다.
