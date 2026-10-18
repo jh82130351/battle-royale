@@ -170,7 +170,7 @@ git add . && git commit && git push origin main
 - 외부 의존: `three.js 0.160.0` (cdnjs) 하나뿐
 
 ## 새 커밋 해시
-- (아래 커밋 참조)
+- `03cdee4`
 
 ## 감독 확인 요청 / 남은 이슈
 1. **직접 쏴 보고 손맛을 봐 주시기 바란다.** 반동 세기(`kick`)·퍼짐(`spread`)·크로스헤어
