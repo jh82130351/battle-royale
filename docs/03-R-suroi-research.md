@@ -345,7 +345,7 @@ git add . && git commit && git push origin main
 코드 변경이 없어 해당 없다. `br/index.html` 은 `git diff` 가 비어 있다.
 
 ## 새 커밋 해시
-- (아래 커밋 참조)
+- `062e2a7`
 
 ## 감독 확인 요청
 1. **라이선스 원칙 확인.** GPL-3 이라 코드는 안 가져온다. **수치표도 그대로 베끼지 않고
