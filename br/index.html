@@ -1,1229 +1,179 @@
-<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>배틀로얄</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>라스트 드롭</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;900&family=Share+Tech+Mono&display=swap">
 <style>
- * { box-sizing: border-box; }
- html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#0b0e13;
-   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color:#e6edf3; }
- #c { display:block; width:100%; height:100%; }
+/* Layout: 전체화면 3D 캔버스 위에 네 귀퉁이 HUD. 해질녘 군용 계기판 톤 하나로 간다 */
+:root{
+  --bg:#0a0d10; --panel:rgba(11,15,19,.78); --line:#273028;
+  --ink:#e4ebe4; --dim:#8b978d;
+  --amber:#ff9d2e; --red:#ff4d4d; --blue:#4db8ff; --green:#86d46b;
+  --f-dis:'Noto Sans KR','Apple SD Gothic Neo',sans-serif;
+  --f-mono:'Share Tech Mono','Noto Sans KR',ui-monospace,monospace;
+  color-scheme:dark;
+}
+/* 일반 웹서버용 리셋 — 아티팩트 플랫폼이 깔아 주던 것을 직접 넣는다.
+   특히 [hidden] 이 없으면 veil.hidden=true 가 #veil{display:grid} 에 밀려
+   시작 화면이 안 사라진다 (2026-10-23 정현 보고). */
+*{box-sizing:border-box}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+html{height:100%}
+body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:var(--f-dis);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+#app{position:relative;height:100%;width:100%;overflow:hidden}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#dmg{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .18s;
+  box-shadow:inset 0 0 160px 40px rgba(255,40,40,.65)}
+#zonefx{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s;
+  box-shadow:inset 0 0 220px 60px rgba(90,170,255,.4)}
 
- /* 시작 오버레이 — 클릭해야 Pointer Lock 이 걸린다 (브라우저가 사용자 제스처를 요구한다) */
- #overlay { position:absolute; inset:0; z-index:10; display:flex; flex-direction:column;
-   align-items:center; justify-content:center; gap:18px; cursor:pointer;
-   background:radial-gradient(ellipse at 50% 42%, #1b2230 0%, #0b0e13 72%); }
- #overlay h1 { margin:0; font-size:30px; letter-spacing:3px; font-weight:700; }
- #overlay .sub { font-size:13px; color:#8b97a8; letter-spacing:1px; }
- #overlay .go { margin-top:4px; padding:13px 30px; border:1px solid #3d4757; border-radius:10px;
-   background:#161c26; font-size:15px; font-weight:700; letter-spacing:1px; }
- #overlay .go:hover { border-color:#5c6b80; background:#1d2531; }
- #keys { display:flex; gap:7px; flex-wrap:wrap; justify-content:center; max-width:460px; margin-top:10px; }
- #keys span { font-size:11px; color:#9fb0c4; background:#131922; border:1px solid #2a3340;
-   border-radius:5px; padding:4px 9px; }
- #overlay .note { font-size:11px; color:#5f6b7c; margin-top:12px; }
+#hud{position:absolute;inset:0;pointer-events:none;display:grid;
+  grid-template-rows:auto 1fr auto;gap:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:14px}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.pan{background:var(--panel);border:1px solid var(--line);padding:7px 11px;
+  font-family:var(--f-mono);font-size:12px;letter-spacing:.04em;backdrop-filter:blur(5px)}
+.pan b{color:var(--amber);font-weight:400}
 
- /* HUD */
- #hud { position:absolute; top:10px; left:10px; z-index:5; font-size:12px; line-height:1.65;
-   background:rgba(10,14,20,0.55); border:1px solid #232c38; border-radius:7px;
-   padding:7px 11px; pointer-events:none; display:none; }
- #hud b { color:#7fd4a0; font-weight:700; }
- #hud .warn { color:#ffb454; }
- /* 크로스헤어 — 막대 4개. 간격이 곧 '지금 이 총의 퍼짐'이다 (02) */
- #crosshair { position:absolute; left:50%; top:50%; z-index:5; display:none; pointer-events:none; }
- #crosshair i { position:absolute; background:#fff; box-shadow:0 0 0 1px rgba(0,0,0,0.55); }
- #crosshair .h { width:2px; height:9px; margin-left:-1px; }
- #crosshair .v { height:2px; width:9px; margin-top:-1px; }
- #crosshair .dot { width:2px; height:2px; margin:-1px 0 0 -1px; background:#fff; }
- /* 맞췄을 때 잠깐 뜨는 X */
- #hitmark { position:absolute; left:50%; top:50%; z-index:6; display:none; pointer-events:none;
-   width:22px; height:22px; margin:-11px 0 0 -11px; opacity:0; }
- #hitmark i { position:absolute; left:10px; top:0; width:2px; height:22px; background:#ff5a4e;
-   box-shadow:0 0 0 1px rgba(0,0,0,0.5); }
- #hitmark i:nth-child(1){ transform:rotate(45deg); }
- #hitmark i:nth-child(2){ transform:rotate(-45deg); }
- /* 무기·탄약 (우하단) · 체력 (좌하단) · 킬 표시 */
- #wep { position:absolute; right:14px; bottom:46px; z-index:5; display:none; text-align:right;
-   pointer-events:none; text-shadow:0 2px 6px rgba(0,0,0,0.8); }
- #wep .nm { font-size:14px; color:#cdd7e3; letter-spacing:1px; }
- #wep .am { font-size:26px; font-weight:700; color:#fff; line-height:1.1; }
- #wep .am s { font-size:15px; color:#8b97a8; text-decoration:none; }
- #wep .rl { font-size:12px; color:#ffb454; height:14px; }
- #wep .list { margin-top:6px; font-size:11px; color:#5f6b7c; letter-spacing:.5px; }
- #wep .list b { color:#7fd4a0; font-weight:700; }
- #vit { position:absolute; left:14px; bottom:14px; z-index:5; display:none; pointer-events:none; }
- #vit .bar { width:190px; height:12px; border:1px solid #2a3340; background:rgba(10,14,20,.6); }
- #vit .bar s { display:block; height:100%; background:#7fd4a0; width:100%; }
- #vit .tx { font-size:11px; color:#8b97a8; margin-top:3px; }
- #feed { position:absolute; right:14px; top:14px; z-index:5; font-size:12px; text-align:right;
-   pointer-events:none; color:#cdd7e3; text-shadow:0 2px 6px rgba(0,0,0,0.8); }
- #feed div { margin-bottom:3px; }
- #feed b { color:#ff8a7a; }
- /* 저격 줌 — 가장자리를 어둡게 */
- #scope { position:absolute; inset:0; z-index:4; display:none; pointer-events:none;
-   background:radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 26%, rgba(0,0,0,0.92) 42%); }
- #paused { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:6;
-   font-size:13px; color:#aab6c6; background:rgba(10,14,20,0.8); border:1px solid #2a3340;
-   border-radius:8px; padding:10px 18px; display:none; pointer-events:none; }
- #stage { position:absolute; bottom:10px; right:12px; z-index:5; font-size:11px; color:#4e5969; }
+#top{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+#alive b{font-size:17px}
+#zone b{color:var(--blue)}
+#zone.warn b{color:var(--red)}
+#feed{margin-left:auto;text-align:right;font-family:var(--f-mono);font-size:11.5px;
+  line-height:1.7;text-shadow:0 2px 6px #000;max-width:46%}
+#feed s{color:var(--amber);text-decoration:none}
+#feed i{color:var(--dim);font-style:normal}
+
+#mid{position:relative;display:grid;place-items:center}
+#cross{position:relative;width:1px;height:1px}
+#cross i{position:absolute;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.6)}
+#cross .v{width:2px;height:8px;margin-left:-1px}
+#cross .h{height:2px;width:8px;margin-top:-1px}
+#hit{position:absolute;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;opacity:0}
+#hit i{position:absolute;left:9px;top:0;width:2px;height:20px;background:var(--red)}
+#hit i:first-child{transform:rotate(45deg)} #hit i:last-child{transform:rotate(-45deg)}
+#prompt{position:absolute;top:calc(50% + 40px);left:50%;transform:translateX(-50%);
+  white-space:nowrap;font-size:12.5px;background:var(--panel);border:1px solid var(--line);
+  padding:6px 11px;display:none}
+#prompt b{font-family:var(--f-mono);color:var(--amber);border:1px solid rgba(255,157,46,.45);
+  padding:1px 5px;margin-right:6px}
+#scope{position:absolute;inset:0;display:none;pointer-events:none;
+  background:radial-gradient(circle at 50% 50%,rgba(0,0,0,0) 24%,rgba(0,0,0,.94) 40%)}
+
+#bot{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+#vit{display:flex;flex-direction:column;gap:5px;min-width:0}
+#hpbar{width:min(230px,42vw);height:13px;border:1px solid var(--line);background:rgba(8,11,14,.7)}
+#hpbar s{display:block;height:100%;background:linear-gradient(90deg,var(--green),#b9e38a);
+  width:100%;transition:width .15s}
+#hpbar.low s{background:linear-gradient(90deg,var(--red),#ff8e6e)}
+#vit .l{font-family:var(--f-mono);font-size:11.5px;color:var(--dim)}
+#map{width:132px;height:132px;border:1px solid var(--line);background:rgba(8,11,14,.72);flex:none}
+#gun{text-align:right;font-family:var(--f-mono)}
+#gun .n{font-size:13px;color:var(--ink);letter-spacing:.08em}
+#gun .a{font-size:27px;color:#fff;line-height:1.05}
+#gun .a s{font-size:14px;color:var(--dim);text-decoration:none}
+#gun .r{font-size:11.5px;color:var(--amber);height:15px}
+#gun .s{font-size:11px;color:var(--dim);margin-top:3px}
+#gun .s b{color:var(--amber);font-weight:400}
+
+/* 시작 · 결과 */
+#veil{position:absolute;inset:0;z-index:9;display:grid;place-items:center;
+  background:radial-gradient(ellipse at 50% 38%,rgba(32,24,16,.9),rgba(6,8,10,.96));
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:20px;overflow-y:auto;cursor:pointer}
+.card{width:100%;max-width:440px;display:flex;flex-direction:column;gap:15px;text-align:center}
+.card h1{margin:0;font-weight:900;font-size:clamp(34px,9vw,52px);line-height:.95;letter-spacing:-.02em;
+  text-wrap:balance;color:#fff;text-shadow:0 0 44px rgba(255,157,46,.4)}
+.card h1 em{font-style:normal;color:var(--amber)}
+.card .sub{margin:0;font-size:13px;line-height:1.7;color:var(--dim)}
+.card .sub b{color:var(--ink);font-weight:500}
+.keys{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px;
+  text-align:left;max-width:330px;margin-inline:auto}
+.keys dt{font-family:var(--f-mono);font-size:11px;color:var(--amber);
+  border:1px solid rgba(255,157,46,.35);padding:2px 7px;justify-self:start;white-space:nowrap}
+.keys dd{margin:0;color:var(--dim);align-self:center}
+.go{font-family:var(--f-dis);font-weight:900;font-size:16px;letter-spacing:.06em;cursor:pointer;
+  color:#1a1206;background:var(--amber);border:none;border-bottom:3px solid #b96c14;padding:14px}
+.go:disabled{background:#2a3038;border-bottom-color:#1a1e24;color:var(--dim);cursor:progress}
+.go:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.note{margin:0;font-size:10.5px;line-height:1.6;color:#5d6760}
+#rank{font-family:var(--f-mono);font-size:15px;color:var(--amber)}
+#rank u{text-decoration:none;font-size:38px;color:#fff;display:block;line-height:1.1}
+#stats{font-family:var(--f-mono);font-size:12px;color:var(--dim);line-height:1.8}
+/* 좁은 화면 — 계기판을 줄여 겹치지 않게 */
+@media (max-width:540px){
+  #map{width:92px;height:92px}
+  #hpbar{width:min(148px,36vw)}
+  #gun .a{font-size:21px}
+  #gun .n{font-size:11.5px}
+  #feed{max-width:54%;font-size:10.5px}
+  .pan{font-size:11px;padding:6px 9px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
-</head>
-<body>
-<canvas id="c"></canvas>
 
-<div id="overlay">
- <h1>배틀로얄</h1>
- <div class="sub">02 — 총기와 히트 판정</div>
- <div class="go">클릭하여 시작</div>
- <div id="keys">
-  <span>WASD 이동</span><span>Shift 달리기</span><span>Space 점프</span>
-  <span>좌클릭 발사</span><span>R 재장전</span><span>1~5 무기</span>
-  <span>우클릭 줌(저격)</span><span>Esc 잠금 해제</span>
- </div>
- <div class="note">표적 봇 8기가 걸어다닌다. 아직 쏘지 않는다 — 전투 AI는 04 단계다.
-  파밍은 03 이라 이번엔 5종을 전부 들고 시작한다.</div>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <div id="dmg"></div>
+  <div id="zonefx"></div>
+  <div id="scope"></div>
+
+  <div id="hud" hidden>
+    <div class="row">
+      <div id="top">
+        <div class="pan" id="alive">생존 <b>12</b></div>
+        <div class="pan" id="zone">자기장 <b>—</b></div>
+      </div>
+      <div id="feed"></div>
+    </div>
+    <div id="mid">
+      <div id="cross"><i class="v"></i><i class="v"></i><i class="h"></i><i class="h"></i></div>
+      <div id="hit"><i></i><i></i></div>
+      <div id="prompt"><b>E</b><span></span></div>
+    </div>
+    <div id="bot">
+      <div id="vit">
+        <div id="hpbar"><s></s></div>
+        <div class="l"></div>
+      </div>
+      <canvas id="map" width="264" height="264"></canvas>
+      <div id="gun">
+        <div class="n">맨손</div>
+        <div class="a">— <s>/ —</s></div>
+        <div class="r"></div>
+        <div class="s"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="veil">
+    <div class="card">
+      <h1>라스트 <em>드롭</em></h1>
+      <p class="sub" id="lead">수송기가 <b>1km 섬</b>을 가로지른다. <b>16명</b>이 뛰어내려 총과 방어구를 줍고,
+        좁혀 오는 자기장 안으로 들어가 <b>마지막 한 명</b>이 될 때까지 버틴다.
+        레드존 폭격과 보급 상자도 떨어진다.</p>
+      <dl class="keys">
+        <dt>Space</dt><dd>수송기에서 <b>이탈</b> — 낙하산은 자동</dd>
+        <dt>W A S D</dt><dd>이동·낙하 조종 · Shift 달리기</dd>
+        <dt>C / Z</dt><dd>앉기 / 엎드리기 — 느려지지만 잘 맞는다</dd>
+        <dt>좌 · 우클릭</dt><dd>발사 · 정조준 (저격은 배율)</dd>
+        <dt>E</dt><dd>줍기 · 지프 탑승 · 보급 상자</dd>
+        <dt>R / 1 2</dt><dd>재장전 / 무기 교체</dd>
+        <dt>3 4 5 6</dt><dd>붕대 · 구급상자 · 구급킷 · 드링크</dd>
+        <dt>F</dt><dd>알아서 적당한 회복품 사용</dd>
+      </dl>
+      <button class="go" id="play" disabled>섬 만드는 중…</button>
+      <div id="rank" hidden></div>
+      <div id="stats" hidden></div>
+      <p class="note"><b style="color:#ff9d2e">마우스와 키보드가 필요합니다</b> — 화면 잠금(포인터 락)으로 조준하는 방식이라
+        휴대폰에서는 조작되지 않습니다. 혼자 돌아가는 오프라인 한 판이고, 텍스처 이미지 없이 형태와 색으로만
+        만들었습니다. 소리도 전부 합성음입니다.</p>
+    </div>
+  </div>
 </div>
-
-<div id="hud"></div>
-<div id="crosshair"><i class="h"></i><i class="h"></i><i class="v"></i><i class="v"></i><i class="dot"></i></div>
-<div id="hitmark"><i></i><i></i></div>
-<div id="scope"></div>
-<div id="wep"><div class="nm"></div><div class="am"></div><div class="rl"></div><div class="list"></div></div>
-<div id="vit"><div class="bar"><s></s></div><div class="tx"></div></div>
-<div id="feed"></div>
-<div id="paused">잠금이 풀렸다 — 화면을 클릭하면 다시 잡힌다</div>
-<div id="stage">02 guns+hit</div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
-<script>
-// ══════════════════════════════════════════════════════════════
-//  배틀로얄 — 01 단계: 3D 맵 + 컨트롤러
-//
-//  이 단계에서 하는 것: 걸어다닐 수 있는 1000×1000 맵 하나.
-//  안 하는 것: 총·파밍·자기장·네트워크 (02~05).
-//
-//  텍스처 이미지는 한 장도 쓰지 않는다. 형태와 색으로만 만든다.
-//  (앞선 두 게임에서 무늬를 붙였다가 가까이서 보면 오히려 싸구려로 보였다.)
-// ══════════════════════════════════════════════════════════════
-
-const canvas = document.getElementById('c');
-const overlay = document.getElementById('overlay');
-const hudEl = document.getElementById('hud');
-const crosshair = document.getElementById('crosshair');
-const pausedEl = document.getElementById('paused');
-const hitmarkEl = document.getElementById('hitmark');
-const scopeEl = document.getElementById('scope');
-const wepEl = document.getElementById('wep');
-const vitEl = document.getElementById('vit');
-const feedEl = document.getElementById('feed');
-const chBars = crosshair.querySelectorAll('i');
-
-// ── 맵 설정 ───────────────────────────────────────────────────
-// half 500 → 1000×1000. 오퍼스 확정값이다(표의 400×400 은 같은 지시에서 1000 으로 정정됐다).
-// seg 256 → 격자 한 칸 3.9m. FPS에서 9.4m 였는데, 맵이 작아진 만큼 촘촘하게 간다.
-const MAP = {
- half: 500,
- seg: 256,
- seed: 20261017,
- roll: 27,          // 완만한 언덕의 높낮이(m). 산이 아니라 언덕이다
- rollFreq: 1/300,
- rise: 40,          // 군데군데 조금 더 솟은 둔덕 — 엄폐가 되는 높이까지
- fine: 2.4,         // 잔굴곡
- edge0: 455,        // 여기서부터 맵 끝까지 서서히 내려앉는다
- edgeDrop: 10,
- slip: 0.80,        // 이 기울기를 넘으면 미끄러진다
- slipAcc: 8,
- H: null,           // 높이 격자 — 화면·물리가 같이 보는 단 하나의 기준
-};
-
-// ── 값 노이즈 ─────────────────────────────────────────────────
-// 외부 라이브러리 없이 쓴다. 좌표만 넣으면 늘 같은 높이가 나오는 함수다 —
-// 누가 접속하든 같은 지형을 본다(05 온라인에서 중요해진다).
-function hash2(ix, iz, seed){
- // 32비트 안에서만 섞는다. 큰 수를 곱하면 자리가 날아가 난수가 죽는다.
- let h = Math.imul(ix | 0, 374761393) ^ Math.imul(iz | 0, 668265263) ^ Math.imul(seed | 0, 1274126177);
- h = Math.imul(h ^ (h >>> 13), 1274126177);
- h ^= h >>> 16;
- return (h >>> 0) / 4294967296;
-}
-const smooth = (t) => t*t*(3-2*t);
-
-function vnoise(x, z, seed){
- const ix = Math.floor(x), iz = Math.floor(z);
- const fx = x-ix, fz = z-iz;
- const a = hash2(ix,   iz,   seed), b = hash2(ix+1, iz,   seed);
- const c = hash2(ix,   iz+1, seed), d = hash2(ix+1, iz+1, seed);
- const u = smooth(fx), v = smooth(fz);
- return (a*(1-u)+b*u)*(1-v) + (c*(1-u)+d*u)*v;
-}
-
-function fbm(x, z, freq, oct, seed){
- let sum=0, amp=1, norm=0, f=freq;
- for(let i=0;i<oct;i++){
-  sum += amp * vnoise(x*f, z*f, seed+i*77);
-  norm += amp; amp *= 0.5; f *= 2.03;
- }
- return sum/norm;                       // 0~1
-}
-
-// ── 건물 자리 ─────────────────────────────────────────────────
-// 지형보다 먼저 정해야 한다. 지형이 건물 자리를 평평하게 깎아야 하기 때문이다.
-// (순서를 거꾸로 두면 건물이 언덕에 파묻히거나 공중에 뜬다.)
-//
-// 03 파밍 단계에서 이 자리들이 전리품 스폰 지점이 된다.
-const SPAWN = { x: 0, z: 0 };            // 플레이어 시작점(맵 중앙)
-const BUILDINGS = (function(){
- const out = [];
- let k = 0;
- const rnd = () => hash2(k++, 7, MAP.seed);
- // 맵을 고르게 덮도록 링 두 겹 + 중앙 한 채
- // 02 에서 13 → 20채. 링을 하나 더 두르고 수를 늘렸다. 바깥 링도 울타리(494m) 안이다.
- const rings = [ {r:120, n:6}, {r:250, n:7}, {r:390, n:6} ];
- out.push({ x: 0, z: -62, w: 26, d: 20, rot: 0, floors: 2 });   // 중앙 랜드마크
- for (const ring of rings) {
-  for (let i=0; i<ring.n; i++){
-   const a = (i/ring.n)*Math.PI*2 + rnd()*0.55;
-   const r = ring.r * (0.80 + rnd()*0.40);
-   const x = Math.cos(a)*r, z = Math.sin(a)*r;
-   if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 55) continue;   // 시작점 바로 위엔 안 짓는다
-   out.push({
-    x: Math.round(x), z: Math.round(z),
-    w: 14 + Math.round(rnd()*14),        // 14~28m
-    d: 11 + Math.round(rnd()*11),        // 11~22m
-    rot: (rnd()-0.5) * 1.2,              // 조금씩 틀어 놓는다. 다 반듯하면 바둑판처럼 보인다
-    floors: rnd() < 0.34 ? 2 : 1,
-   });
-  }
- }
- return out;
-})();
-
-// ── 평탄화 마스크 ─────────────────────────────────────────────
-// 0 이면 완전 평지, 1 이면 지형 그대로. 건물 자리와 시작점을 평평하게 만든다.
-function flatDisc(x, z, cx, cz, r, ramp){
- const d = Math.hypot(x-cx, z-cz);
- if (d <= r) return 0;
- if (d >= r+ramp) return 1;
- return smooth((d-r)/ramp);
-}
-function flatMask(x, z){
- let m = flatDisc(x, z, SPAWN.x, SPAWN.z, 26, 40);      // 시작점 주변
- for (const b of BUILDINGS) {
-  const pad = Math.max(b.w, b.d) * 0.62 + 7;
-  m = Math.min(m, flatDisc(x, z, b.x, b.z, pad, 26));
-  if (m === 0) break;
- }
- return m;
-}
-
-// ── 높이 함수 ─────────────────────────────────────────────────
-// 지형의 전부가 여기 있다. "완만한 언덕"이 목표다 — 산맥은 안 만든다.
-// (FPS 쪽은 능선 노이즈로 산등성이를 세웠는데, 배틀로얄은 서로 보이고
-//  쏠 수 있어야 하므로 시야를 끊는 큰 산을 두지 않는다.)
-function terrainHeight(x, z){
- // 1) 넓고 완만한 기복
- let h = MAP.roll * (fbm(x, z, MAP.rollFreq, 4, MAP.seed) - 0.45);
- // 2) 군데군데 둔덕 — 엄폐물이 되는 높이까지만
- const b = fbm(x, z, 1/620, 2, MAP.seed + 31);
- h += MAP.rise * Math.pow(Math.max(0, b - 0.46) / 0.54, 1.6);
- // 3) 잔굴곡
- h += MAP.fine * (fbm(x, z, 1/58, 3, MAP.seed + 53) - 0.5);
- h *= flatMask(x, z);                   // 건물 자리·시작점은 평평하게
- // 4) 맵 끝은 바깥으로 살짝 떨어뜨린다. 평평하게 잘리면 하늘과 맞닿은 판때기로 보인다
- const edge = Math.max(Math.abs(x), Math.abs(z));
- if (edge > MAP.edge0) {
-  const t = smooth(Math.min(1, (edge - MAP.edge0) / (MAP.half - MAP.edge0)));
-  h = h*(1-t) - MAP.edgeDrop*t;
- }
- return h;
-}
-
-// ── 하나의 기준: 그려지는 격자 ────────────────────────────────
-// terrainHeight 는 '연속 함수'이고 화면에 그려지는 건 '격자를 편 면'이다.
-// 둘은 굽은 곳에서 어긋난다 — 함수 높이를 쓰면 물체가 땅에 묻히거나 뜬다.
-// 그래서 물리도 배치도 전부 이 격자를 본다. (FPS에서 나무가 떠 있던 원인이 이것이었다.)
-function groundAt(x, z){
- const H = MAP.H;
- if (!H) return terrainHeight(x, z);
- const N = MAP.seg, W = N+1, S = MAP.half*2, cell = S/N;
- let fx = (x + S/2)/cell, fz = (z + S/2)/cell;
- fx = Math.max(0, Math.min(N - 1e-6, fx));
- fz = Math.max(0, Math.min(N - 1e-6, fz));
- const gx = fx|0, gz = fz|0, tx = fx-gx, tz = fz-gz;
- const h00=H[gz*W+gx], h10=H[gz*W+gx+1], h01=H[(gz+1)*W+gx], h11=H[(gz+1)*W+gx+1];
- return (h00*(1-tx)+h10*tx)*(1-tz) + (h01*(1-tx)+h11*tx)*tz;
-}
-// 경사 — 0 이면 평지, 1 이면 45도. 격자에서 바로 뽑으므로 노이즈를 다시 계산하지 않는다.
-function terrainSlope(x, z){
- const e = 3;
- const hx = groundAt(x+e, z) - groundAt(x-e, z);
- const hz = groundAt(x, z+e) - groundAt(x, z-e);
- return Math.hypot(hx, hz) / (2*e);
-}
-
-// ══════════════════════════════════════════════════════════════
-//  장면
-// ══════════════════════════════════════════════════════════════
-const scene = new THREE.Scene();
-(function(){   // 하늘: 천정(진한 파랑) → 지평선(옅은 파랑). 이미지가 아니라 그라디언트다
- const c = document.createElement('canvas'); c.width = 4; c.height = 256;
- const ctx = c.getContext('2d');
- const g = ctx.createLinearGradient(0,0,0,256);
- g.addColorStop(0.00, '#3f7fce');
- g.addColorStop(0.55, '#8ab6e8');
- g.addColorStop(1.00, '#d6e8f7');
- ctx.fillStyle = g; ctx.fillRect(0,0,4,256);
- const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
- scene.background = tex;
-})();
-scene.fog = new THREE.Fog(0xd6e8f7, 330, 1250);   // 1000m 맵 — 맞은편 끝이 안개 너머로 보인다
-
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.06;
-
-scene.add(new THREE.HemisphereLight(0xffffff, 0x55667a, 0.85));
-const sun = new THREE.DirectionalLight(0xffffff, 1.05);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-// 그림자 상자를 맵 전체로 넓히면 2048픽셀을 1km에 펴는 셈이라 뭉개진다.
-// 상자는 150m 로 두고 해를 플레이어와 함께 옮긴다.
-sun.shadow.camera.left = -150; sun.shadow.camera.right = 150;
-sun.shadow.camera.top = 150; sun.shadow.camera.bottom = -150;
-sun.shadow.camera.near = 1; sun.shadow.camera.far = 760;
-sun.shadow.bias = -0.0006;
-scene.add(sun); scene.add(sun.target);
-const SUN_OFF = { x: 170, y: 260, z: 110 };
-function moveSunWithPlayer(){
- const p = yawObject.position;
- sun.target.position.set(p.x, 0, p.z);
- sun.position.set(p.x + SUN_OFF.x, p.y + SUN_OFF.y, p.z + SUN_OFF.z);
- sun.target.updateMatrixWorld();
-}
-
-// 카메라 — far 는 맵 대각선(약 1414m)보다 넉넉히
-const playCam = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2200);
-const yawObject = new THREE.Object3D();
-const pitchObject = new THREE.Object3D();
-const EYE_HEIGHT = 1.7;
-yawObject.position.set(SPAWN.x, EYE_HEIGHT, SPAWN.z);
-yawObject.add(pitchObject); pitchObject.add(playCam);
-scene.add(yawObject);
-
-// ══════════════════════════════════════════════════════════════
-//  지형 메시
-// ══════════════════════════════════════════════════════════════
-// 타일로 쪼갠다. 메시 하나로 두면 경계구가 맵 전체를 덮어 프러스텀 컬링이 안 듣는다 —
-// 어디를 보든 13만 삼각형을 통째로 올리게 된다. (FPS에서 겪고 고친 그대로다.)
-let terrainTiles = [];
-function buildTerrain(){
- const N = MAP.seg, S = MAP.half*2, W = N+1, cell = S/N;
-
- // 1) 높이 격자 — 한 번만 만든다
- const H = new Float32Array(W*W);
- for (let gz=0; gz<W; gz++){
-  const z = -S/2 + gz*cell;
-  for (let gx=0; gx<W; gx++) H[gz*W+gx] = terrainHeight(-S/2 + gx*cell, z);
- }
- MAP.H = H;
-
- // 2) 법선도 격자에서 한 번만. 타일마다 따로 구하면 경계에서 음영이 뚝 끊긴다
- const NR = new Float32Array(W*W*3);
- for (let gz=0; gz<W; gz++) for (let gx=0; gx<W; gx++){
-  const hL=H[gz*W+Math.max(0,gx-1)], hR=H[gz*W+Math.min(W-1,gx+1)];
-  const hD=H[Math.max(0,gz-1)*W+gx], hU=H[Math.min(W-1,gz+1)*W+gx];
-  const nx=-(hR-hL)/(2*cell), ny=1, nz=-(hU-hD)/(2*cell);
-  const il=1/Math.hypot(nx,ny,nz);
-  const o=(gz*W+gx)*3; NR[o]=nx*il; NR[o+1]=ny*il; NR[o+2]=nz*il;
- }
-
- // 3) 색 — 텍스처 대신 높이·경사로 잔디/흙/바위를 가른다
- const GRASS=[0.35,0.52,0.26], DRY=[0.52,0.52,0.32], DIRT=[0.44,0.37,0.26], ROCK=[0.44,0.45,0.42];
- const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
- const cl=(v)=>Math.min(1,Math.max(0,v));
- const COL = new Float32Array(W*W*3);
- for (let gz=0; gz<W; gz++) for (let gx=0; gx<W; gx++){
-  const i=gz*W+gx, h=H[i];
-  const x=-S/2+gx*cell, z=-S/2+gz*cell;
-  const hL=H[gz*W+Math.max(0,gx-1)], hR=H[gz*W+Math.min(W-1,gx+1)];
-  const hD=H[Math.max(0,gz-1)*W+gx], hU=H[Math.min(W-1,gz+1)*W+gx];
-  const sl = Math.hypot((hR-hL)/(2*cell), (hU-hD)/(2*cell));
-  // 넓은 색 얼룩 — 단색 들판은 걸어도 움직이는 느낌이 안 난다
-  const patch = fbm(x, z, 1/120, 2, MAP.seed+91);
-  let c = mix(GRASS, DRY, cl((patch-0.44)/0.40));
-  c = mix(c, DIRT, cl((sl-0.26)/0.26));         // 비탈지면 흙이 드러난다
-  c = mix(c, ROCK, cl((sl-0.58)/0.30));         // 더 가파르면 바위
-  const n = 0.94 + 0.12*vnoise(x*0.11, z*0.11, MAP.seed+5);
-  COL[i*3]=c[0]*n; COL[i*3+1]=c[1]*n; COL[i*3+2]=c[2]*n;
- }
-
- // 4) 타일로 쪼개 그린다. 격자 값을 그대로 읽으므로 타일 경계에 틈이 없다
- const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1 });
- const TILES = 8, TC = N / TILES;
- for (let tz=0; tz<TILES; tz++) for (let tx=0; tx<TILES; tx++){
-  const gx0 = tx*TC, gz0 = tz*TC, TW = TC+1;
-  const pos = new Float32Array(TW*TW*3), nor = new Float32Array(TW*TW*3), col = new Float32Array(TW*TW*3);
-  for (let j=0;j<TW;j++) for (let i=0;i<TW;i++){
-   const gi = (gz0+j)*W + (gx0+i), o = (j*TW+i)*3;
-   pos[o] = -S/2 + (gx0+i)*cell; pos[o+1] = H[gi]; pos[o+2] = -S/2 + (gz0+j)*cell;
-   nor[o]=NR[gi*3]; nor[o+1]=NR[gi*3+1]; nor[o+2]=NR[gi*3+2];
-   col[o]=COL[gi*3]; col[o+1]=COL[gi*3+1]; col[o+2]=COL[gi*3+2];
-  }
-  const idx = new Uint32Array(TC*TC*6);
-  let k=0;
-  for (let j=0;j<TC;j++) for (let i=0;i<TC;i++){
-   const a0=j*TW+i, b0=a0+1, c0=a0+TW, d0=c0+1;
-   idx[k++]=a0; idx[k++]=c0; idx[k++]=b0;
-   idx[k++]=b0; idx[k++]=c0; idx[k++]=d0;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  geo.setAttribute('normal',   new THREE.BufferAttribute(nor,3));
-  geo.setAttribute('color',    new THREE.BufferAttribute(col,3));
-  geo.setIndex(new THREE.BufferAttribute(idx,1));
-  geo.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.receiveShadow = true;
-  scene.add(mesh); terrainTiles.push(mesh);
- }
-}
-
-// ══════════════════════════════════════════════════════════════
-//  충돌체
-// ══════════════════════════════════════════════════════════════
-// {cx,cz, hw,hd, y0,y1, a} — a 는 y축 회전(라디안). 상자 하나가 곧 벽 한 장이다.
-//
-// 회전 부호를 Three.js 와 맞춘다. three 의 Y축 회전은
-//   월드 = ( lx·cos + lz·sin , -lx·sin + lz·cos )
-// 이고 그 역이
-//   로컬 = ( wx·cos - wz·sin ,  wx·sin + wz·cos )
-// 이다. FPS 쪽 충돌 코드는 부호가 반대인 식을 쓰는데, 거기선 메시도 같은 식으로
-// 놓아서 아귀가 맞았다. 여기서는 메시를 three 쿼터니언으로 놓으므로
-// 그 식을 그대로 가져오면 **콜라이더만 반대로 돌아간다** — 중심은 맞는데 벽이 어긋난다.
-// 실제로 그렇게 짰다가 회전된 건물에서 벽 없는 곳이 막히고 벽이 뚫렸다.
-const toLocal = (dx, dz, ca, sa) => [ dx*ca - dz*sa,  dx*sa + dz*ca ];
-const toWorld = (lx, lz, ca, sa) => [ lx*ca + lz*sa, -lx*sa + lz*ca ];
-const colliders = [];
-function addCollider(cx, y0, cz, w, h, d, a){
- colliders.push({ cx, cz, hw:w/2, hd:d/2, y0, y1:y0+h, a:a||0 });
-}
-
-// ══════════════════════════════════════════════════════════════
-//  건물 — 조각을 하나의 지오메트리로 합친다
-// ══════════════════════════════════════════════════════════════
-// 조각마다 메시를 두면 드로우콜이 수백 개 는다. 색은 버텍스 컬러로 넣고
-// 건물 한 채를 메시 하나로 묶는다. (FPS 상점가에서 배운 것이다.)
-function mergePieces(list){
- let vc=0, ic=0;
- for(const o of list){ vc += o.geo.attributes.position.count; ic += o.geo.index.count; }
- const pos=new Float32Array(vc*3), nor=new Float32Array(vc*3), col=new Float32Array(vc*3);
- const idx=new Uint32Array(ic);
- let vo=0, io2=0;
- const nm=new THREE.Matrix3(), v=new THREE.Vector3(), n=new THREE.Vector3(), c=new THREE.Color();
- for(const o of list){
-  const g=o.geo, pa=g.attributes.position, na=g.attributes.normal, gi=g.index;
-  nm.getNormalMatrix(o.m); c.set(o.color);
-  for(let i=0;i<pa.count;i++){
-   v.fromBufferAttribute(pa,i).applyMatrix4(o.m);
-   pos[(vo+i)*3]=v.x; pos[(vo+i)*3+1]=v.y; pos[(vo+i)*3+2]=v.z;
-   n.fromBufferAttribute(na,i).applyMatrix3(nm).normalize();
-   nor[(vo+i)*3]=n.x; nor[(vo+i)*3+1]=n.y; nor[(vo+i)*3+2]=n.z;
-   col[(vo+i)*3]=c.r; col[(vo+i)*3+1]=c.g; col[(vo+i)*3+2]=c.b;
-  }
-  for(let i=0;i<gi.count;i++) idx[io2+i]=gi.getX(i)+vo;
-  vo+=pa.count; io2+=gi.count;
- }
- const out=new THREE.BufferGeometry();
- out.setAttribute('position', new THREE.BufferAttribute(pos,3));
- out.setAttribute('normal',   new THREE.BufferAttribute(nor,3));
- out.setAttribute('color',    new THREE.BufferAttribute(col,3));
- out.setIndex(new THREE.BufferAttribute(idx,1));
- out.computeBoundingSphere();
- return out;
-}
-const BUILD_MAT = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.95, flatShading:true });
-const BOX = new THREE.BoxGeometry(1,1,1);
-
-let buildingMeshes = [];
-function buildBuildings(){
- const WALL_TONES = [0xd8d2c2, 0xc9c6bd, 0xcfc0a6, 0xbfc4c4, 0xd2c3b0, 0xc2bda8];
- const ROOF_TONES = [0x8a5a44, 0x5d6b78, 0x6e7a52, 0x7a5a5a, 0x4f6b63, 0x8a7a4a];
-
- for (let bi=0; bi<BUILDINGS.length; bi++){
-  const b = BUILDINGS[bi];
-  const pieces = [];
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
-  const rotQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), b.rot);
-  const base = groundAt(b.x, b.z);             // 격자 높이를 본다 — 함수 높이를 쓰면 뜬다
-  const wall = WALL_TONES[bi % WALL_TONES.length];
-  const roof = ROOF_TONES[(bi*3+1) % ROOF_TONES.length];
-  const T = 0.5;                               // 벽 두께
-  const fh = 3.6;                              // 한 층 높이
-  const h = fh * b.floors;
-
-  // 건물 로컬 좌표(회전 전)로 조각을 놓고, 마지막에 통째로 돌린다
-  const put = (lx, ly, lz, w, hh, d, color) => {
-   const p = new THREE.Vector3(lx, ly, lz).applyQuaternion(rotQ);
-   m4.compose(new THREE.Vector3(b.x + p.x, base + p.y, b.z + p.z),
-              rotQ, new THREE.Vector3(w, hh, d));
-   pieces.push({ geo: BOX, color, m: m4.clone() });
-  };
-  // 벽에는 콜라이더도 같이 건다. 회전은 건물 회전을 그대로 쓴다
-  const putWall = (lx, ly, lz, w, hh, d, color) => {
-   put(lx, ly, lz, w, hh, d, color);
-   const p = new THREE.Vector3(lx, 0, lz).applyQuaternion(rotQ);
-   addCollider(b.x + p.x, base + ly - hh/2, b.z + p.z, w, hh, d, b.rot);
-  };
-
-  const hw = b.w/2, hd = b.d/2;
-  // 바닥판 — 지면보다 조금 높여 문턱을 만든다
-  put(0, 0.12, 0, b.w, 0.24, b.d, 0xa9a399);
-  addCollider(b.x, base, b.z, b.w, 0.24, b.d, b.rot);
-
-  // 뒷벽·좌우벽
-  putWall(0, h/2 + 0.24, -hd, b.w, h, T, wall);
-  putWall(-hw, h/2 + 0.24, 0, T, h, b.d, wall);
-  putWall( hw, h/2 + 0.24, 0, T, h, b.d, wall);
-  // 앞벽 — 가운데에 문 구멍
-  const doorW = 3.4, side = (b.w - doorW)/2;
-  putWall(-(doorW/2 + side/2), h/2 + 0.24, hd, side, h, T, wall);
-  putWall( (doorW/2 + side/2), h/2 + 0.24, hd, side, h, T, wall);
-  putWall(0, h - 0.9 + 0.24, hd, doorW, 1.8, T, wall);     // 문 위 인방
-
-  // 창 — 어두운 유리판 + 그 둘레로 튀어나온 창틀. 무늬가 아니라 형태로 낸다.
-  //
-  // 주의: 벽은 두께 0.5 라 겉면이 hd+0.25 에 있다. 창을 hd+0.08 쯤에 두면
-  // **벽 속에 파묻혀 화면에 안 나온다** — 처음에 그렇게 짜서 창이 없는 건물이 됐다.
-  // 벽 겉면보다 바깥에 둬야 보인다.
-  const FACE = T/2;                       // 벽 겉면까지의 거리
-  const winY = 2.0, WW = 1.9, WH = 1.35, FR = 0.16;
-  const glass = 0x27323e, frame = 0xeae5d8;
-  for (let f=0; f<b.floors; f++){
-   const wy = winY + f*fh;
-   // 앞·뒤 벽의 창 (로컬 ±z 면)
-   for (const sgn of [1, -1]) {
-    const zf = sgn*(hd + FACE);
-    for (const sx of [-hw*0.54, hw*0.54]) {
-     if (sgn > 0 && Math.abs(sx) < doorW/2 + WW/2) continue;   // 문과 겹치면 건너뛴다
-     put(sx, wy, zf + sgn*0.03, WW, WH, 0.06, glass);          // 유리
-     put(sx, wy + WH/2, zf + sgn*0.07, WW+2*FR, FR, 0.14, frame);   // 위틀
-     put(sx, wy - WH/2, zf + sgn*0.09, WW+2*FR, FR, 0.22, frame);   // 창턱(조금 더 나온다)
-     for (const sd of [-1, 1])
-      put(sx + sd*(WW/2 + FR/2), wy, zf + sgn*0.07, FR, WH+2*FR, 0.14, frame);  // 양옆
-    }
-   }
-   // 좌·우 벽의 창 (로컬 ±x 면)
-   for (const sgn of [1, -1]) {
-    const xf = sgn*(hw + FACE);
-    for (const sz of [-hd*0.44, hd*0.44]) {
-     put(xf + sgn*0.03, wy, sz, 0.06, WH, WW, glass);
-     put(xf + sgn*0.07, wy + WH/2, sz, 0.14, FR, WW+2*FR, frame);
-     put(xf + sgn*0.09, wy - WH/2, sz, 0.22, FR, WW+2*FR, frame);
-     for (const sd of [-1, 1])
-      put(xf + sgn*0.07, wy, sz + sd*(WW/2 + FR/2), 0.14, WH+2*FR, FR, frame);
-    }
-   }
-  }
-  // 문틀 — 문 구멍 둘레를 테두리로 짚어 준다. 멀리서도 입구가 읽힌다
-  for (const sd of [-1, 1])
-   put(sd*(doorW/2 + 0.13), (h - 1.8)/2 + 0.24, hd + FACE + 0.06, 0.26, h - 1.8, 0.2, 0x8c7f6e);
-  put(0, h - 1.8 + 0.24, hd + FACE + 0.06, doorW + 0.52, 0.26, 0.2, 0x8c7f6e);
-  // 층 사이 띠 (2층만)
-  if (b.floors > 1) put(0, fh + 0.24, 0, b.w + 0.5, 0.3, b.d + 0.5, 0xbab5a8);
-
-  // 지붕 — 처마가 벽 밖으로 나오고 얇은 테두리가 그림자 선을 만든다
-  put(0, h + 0.46, 0, b.w + 1.5, 0.44, b.d + 1.5, roof);
-  put(0, h + 0.74, 0, b.w + 0.4, 0.22, b.d + 0.4, roof);
-  addCollider(b.x, base + h + 0.24, b.z, b.w + 1.5, 0.44, b.d + 1.5, b.rot);
-
-  // 옥상 난간 — 지붕 위에 올라설 수 있으니 실루엣이 밋밋하지 않게
-  for (const s of [-1, 1]) {
-   put(0, h + 1.26, s*(hd + 0.6), b.w + 1.5, 0.8, 0.28, roof);
-   put(s*(hw + 0.6), h + 1.26, 0, 0.28, 0.8, b.d + 1.5, roof);
-  }
-
-  const mesh = new THREE.Mesh(mergePieces(pieces), BUILD_MAT);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  scene.add(mesh); buildingMeshes.push(mesh);
- }
-}
-
-// ══════════════════════════════════════════════════════════════
-//  경계 — 맵 끝
-// ══════════════════════════════════════════════════════════════
-// 보이지 않는 벽에 부딪히면 버그처럼 느껴진다. 눈에 보이는 울타리를 세운다.
-// 물리는 아래 physics() 에서 좌표를 직접 자른다 (콜라이더로 하면 1km 짜리 상자가 된다).
-const FENCE = MAP.half - 6;
-function buildBoundary(){
- const postGeo = new THREE.BoxGeometry(1.0, 5.2, 1.0);
- const postMat = new THREE.MeshStandardMaterial({ color:0x5a6472, roughness:1, flatShading:true });
- const railMat = new THREE.MeshStandardMaterial({ color:0x79838f, roughness:1, flatShading:true,
-   transparent:true, opacity:0.55, side:THREE.DoubleSide });
- const STEP = 25;
- const dummy = new THREE.Object3D();
- const spots = [];
- for (let t = -FENCE; t <= FENCE; t += STEP) {
-  spots.push([t, -FENCE], [t, FENCE], [-FENCE, t], [FENCE, t]);
- }
- const posts = new THREE.InstancedMesh(postGeo, postMat, spots.length);
- spots.forEach(([x,z],i)=>{
-  dummy.position.set(x, groundAt(x,z) + 2.0, z);
-  dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
-  dummy.updateMatrix(); posts.setMatrixAt(i, dummy.matrix);
- });
- posts.castShadow = true; scene.add(posts);
-
- // 네 변을 반투명 판으로 막는다. 멀리서도 "여기가 끝"이 읽힌다
- for (const side of [0,1,2,3]) {
-  const horiz = (side < 2);
-  const geo = new THREE.PlaneGeometry(FENCE*2, 4.6, 48, 1);
-  const pa = geo.attributes.position;
-  for (let i=0;i<pa.count;i++){
-   const u = pa.getX(i);
-   const wx = horiz ? u : (side===2 ? -FENCE : FENCE);
-   const wz = horiz ? (side===0 ? -FENCE : FENCE) : u;
-   pa.setZ(i, groundAt(wx, wz));          // 지형을 따라 오르내리게
-  }
-  geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, railMat);
-  m.position.set(0, 2.3, 0);
-  if (!horiz) m.rotation.y = Math.PI/2;
-  // PlaneGeometry 는 xy 평면이다. 눕히지 말고 세운 채로 z에 높이를 넣었으므로
-  // 여기서는 z 성분을 월드 높이로 옮긴다
-  const p2 = m.geometry.attributes.position;
-  for (let i=0;i<p2.count;i++){
-   p2.setXYZ(i, p2.getX(i), p2.getY(i) + p2.getZ(i), 0);
-  }
-  m.geometry.computeVertexNormals();
-  m.geometry.computeBoundingSphere();
-  scene.add(m);
- }
-}
-
-// ══════════════════════════════════════════════════════════════
-//  입력
-// ══════════════════════════════════════════════════════════════
-const keys = {};
-let locked = false, started = false;
-const PITCH_LIMIT = Math.PI/2 - 0.02;
-
-addEventListener('keydown', (e) => {
- keys[e.code] = true;
- if (e.code === 'Space') e.preventDefault();   // 페이지가 스크롤되지 않게
- if (!started || !locked) return;
- if (e.code === 'KeyR') startReload();
- if (e.code.startsWith('Digit')){
-  const n = +e.code.slice(5);
-  if (n >= 1 && n <= GUNS.length) switchGun(n - 1);
- }
-});
-// 좌클릭 발사(누르고 있으면 연사) · 우클릭 줌(저격만)
-document.addEventListener('mousedown', (e) => {
- if (!started || !locked) return;
- if (e.button === 0) firing = true;
- if (e.button === 2) setScope(true);
-});
-document.addEventListener('mouseup', (e) => {
- if (e.button === 0) firing = false;
- if (e.button === 2) setScope(false);
-});
-document.addEventListener('contextmenu', (e) => { if (started) e.preventDefault(); });
-addEventListener('keyup', (e) => { keys[e.code] = false; });
-addEventListener('blur', () => { for (const k in keys) keys[k] = false; });  // 창을 벗어나면 키가 눌린 채 남는다
-
-document.addEventListener('pointerlockchange', () => {
- locked = document.pointerLockElement === canvas;
- crosshair.style.display = locked ? 'block' : 'none';
- pausedEl.style.display = (started && !locked) ? 'block' : 'none';
- if (!locked) { for (const k in keys) keys[k] = false; firing = false; setScope(false); }
-});
-
-document.addEventListener('mousemove', (e) => {
- if (!locked) return;
- const s = 0.0022;
- yawObject.rotation.y -= e.movementX * s;
- pitchObject.rotation.x -= e.movementY * s;
- pitchObject.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitchObject.rotation.x));
-});
-
-function grabPointer(){
- try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(()=>{}); } catch(e){}
-}
-overlay.addEventListener('click', () => {
- overlay.style.display = 'none';
- hudEl.style.display = 'block';
- wepEl.style.display = 'block';
- vitEl.style.display = 'block';
- started = true;
- grabPointer();
-});
-canvas.addEventListener('click', () => { if (started && !locked) grabPointer(); });
-
-addEventListener('resize', () => {
- playCam.aspect = window.innerWidth / window.innerHeight;
- playCam.updateProjectionMatrix();
- renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-// ══════════════════════════════════════════════════════════════
-//  물리 · 이동
-// ══════════════════════════════════════════════════════════════
-const WALK = 6.2, RUN = 10.5, GRAVITY = 24, JUMP_SPEED = 8.2;
-const BODY_R = 0.42;
-// 이 높이까지는 턱을 그냥 넘어간다. 없으면 건물 바닥판(0.24m)이 벽처럼 막아서
-// 문으로 들어갈 수조차 없다 — 실제로 그렇게 막혀 있었다.
-const STEP_UP = 0.55;
-let vertVel = 0, onGround = true;
-const velocity = new THREE.Vector3();
-const forward = new THREE.Vector3(), right = new THREE.Vector3();
-
-function physics(dt){
- const shift = keys['ShiftLeft'] || keys['ShiftRight'];
- const speed = shift ? RUN : WALK;
- const y = yawObject.rotation.y;
- forward.set(-Math.sin(y), 0, -Math.cos(y));
- right.set(Math.cos(y), 0, -Math.sin(y));
-
- const move = new THREE.Vector3();
- if (keys['KeyW']) move.add(forward);
- if (keys['KeyS']) move.sub(forward);
- if (keys['KeyD']) move.add(right);
- if (keys['KeyA']) move.sub(right);
- if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
-
- // 즉시 최고속도로 튀지 않게 — 멈출 때도 똑같이 부드럽게 선다
- velocity.lerp(move, 1 - Math.pow(0.001, dt));
- yawObject.position.addScaledVector(velocity, dt);
-
- const pos = yawObject.position;
-
- // ── 수평 충돌 ────────────────────────────────────────────
- // 상자 안에 들어갔으면 가장 가까운 면으로 밀어낸다
- for (const c of colliders) {
-  const feetY = pos.y - EYE_HEIGHT, headY = pos.y;
-  if (feetY >= c.y1 - 0.05 || headY <= c.y0) continue;
-  if (c.y1 <= feetY + STEP_UP) continue;        // 발끝 높이의 턱은 안 막는다
-  const ca = Math.cos(c.a), sa = Math.sin(c.a);
-  let [lx, lz] = toLocal(pos.x - c.cx, pos.z - c.cz, ca, sa);
-  const bx = c.hw + BODY_R, bz = c.hd + BODY_R;
-  if (lx > -bx && lx < bx && lz > -bz && lz < bz) {
-   // 상자 안에 들어갔다 — 가장 가까운 면으로 밀어낸다
-   const pL = lx+bx, pR = bx-lx, pD = lz+bz, pU = bz-lz;
-   const m = Math.min(pL, pR, pD, pU);
-   if (m === pL) lx = -bx; else if (m === pR) lx = bx;
-   else if (m === pD) lz = -bz; else lz = bz;
-   const [wx, wz] = toWorld(lx, lz, ca, sa);
-   pos.x = c.cx + wx;
-   pos.z = c.cz + wz;
-  }
- }
-
- // ── 경계 ─────────────────────────────────────────────────
- // 울타리 안쪽으로 자른다. 콜라이더로 하면 1km 짜리 상자가 되어 위 루프가 느려진다
- const lim = FENCE - BODY_R;
- if (pos.x >  lim) pos.x =  lim;
- if (pos.x < -lim) pos.x = -lim;
- if (pos.z >  lim) pos.z =  lim;
- if (pos.z < -lim) pos.z = -lim;
-
- // ── 수직 ─────────────────────────────────────────────────
- const prevFeet = pos.y - EYE_HEIGHT;
- if (onGround && keys['Space']) { vertVel = JUMP_SPEED; onGround = false; }
- vertVel -= GRAVITY * dt;
- pos.y += vertVel * dt;
-
- // 바닥 후보 중 가장 높은 것을 고른다
- let groundY = -Infinity;
- for (const c of colliders) {
-  const ca = Math.cos(c.a), sa = Math.sin(c.a);
-  const [lx, lz] = toLocal(pos.x - c.cx, pos.z - c.cz, ca, sa);
-  if (lx > -(c.hw+BODY_R) && lx < (c.hw+BODY_R) && lz > -(c.hd+BODY_R) && lz < (c.hd+BODY_R)) {
-   const top = c.y1 + EYE_HEIGHT;
-   // 착지: 내려오는 중이고, 직전에 발이 윗면 위(또는 근처)에 있었을 때만.
-   // 이 조건이 없으면 아래에서 뛰어올라도 지붕 위로 순간이동한다
-   // 턱(STEP_UP 이하)은 걸어 올라갈 수 있게 같은 여유를 준다.
-   // 이 값이 위 수평 충돌의 여유와 같아야 '안 막히는데 올라가지도 못하는' 틈이 안 생긴다.
-   if (vertVel <= 0 && prevFeet >= c.y1 - STEP_UP && (pos.y - EYE_HEIGHT) <= c.y1 && top > groundY) {
-    groundY = top;
-   }
-   // 천장
-   if (vertVel > 0 && (prevFeet + EYE_HEIGHT) <= c.y0 + 0.05 && pos.y > c.y0) {
-    pos.y = c.y0 - 0.02; vertVel = 0;
-   }
-  }
- }
- const terrainTop = groundAt(pos.x, pos.z) + EYE_HEIGHT;
- if (terrainTop > groundY) groundY = terrainTop;
-
- if (pos.y <= groundY) { pos.y = groundY; vertVel = 0; onGround = true; }
- else onGround = false;
-
- // ── 가파른 비탈에서 미끄러짐 ─────────────────────────────
- // 땅을 딛고 있을 때만. 지붕 위에 선 건 해당 없다
- if (onGround && groundY === terrainTop) {
-  const sl = terrainSlope(pos.x, pos.z);
-  if (sl > MAP.slip) {
-   const e = 3;
-   const gx = groundAt(pos.x+e, pos.z) - groundAt(pos.x-e, pos.z);
-   const gz = groundAt(pos.x, pos.z+e) - groundAt(pos.x, pos.z-e);
-   const len = Math.hypot(gx, gz) || 1;
-   const k = Math.min(1, (sl - MAP.slip)/0.45) * MAP.slipAcc * dt;
-   pos.x -= (gx/len) * k;                 // 기울기의 반대 = 내리막
-   pos.z -= (gz/len) * k;
-  }
- }
-}
-
-
-// ══════════════════════════════════════════════════════════════
-//  02 — 총기 · 발사 · 히트 판정
-// ══════════════════════════════════════════════════════════════
-// 수치는 전부 이 표 한 곳에만 둔다. 정현이 고칠 자리다.
-//   dmg 한 발 피해 · rate 연사 간격(초) · mag 탄창 · reload 재장전(초)
-//   kick 반동 세기 · range 사거리(m) · spread 퍼짐(라디안) · pellets 한 발의 탄 수
-//   falloff 1 이면 사거리 안에서도 거리만큼 깎인다 (샷건)
-const GUNS = [
- { key:'pistol',  name:'권총', dmg:20, rate:0.25, mag:12, reload:1.6, kick:0.8, range:50,  spread:0.010, pellets:1 },
- { key:'smg',     name:'SMG',  dmg:14, rate:0.07, mag:30, reload:2.0, kick:1.3, range:40,  spread:0.022, pellets:1 },
- { key:'rifle',   name:'소총', dmg:28, rate:0.12, mag:30, reload:2.4, kick:1.6, range:120, spread:0.013, pellets:1 },
- { key:'shotgun', name:'샷건', dmg:12, rate:0.90, mag:6,  reload:2.8, kick:3.0, range:15,  spread:0.065, pellets:8, falloff:1 },
- { key:'sniper',  name:'저격', dmg:95, rate:1.50, mag:5,  reload:3.2, kick:4.0, range:300, spread:0.002, pellets:1, scope:1 },
-];
-// 맞은 자리별 배율 — 머리 ×2 / 몸 ×1 / 다리 ×0.75
-const PARTS = [
- { y0:1.55, y1:1.82, r:0.17, mul:2.00, tag:'머리' },
- { y0:0.92, y1:1.55, r:0.32, mul:1.00, tag:'몸'   },
- { y0:0.00, y1:0.92, r:0.30, mul:0.75, tag:'다리' },
-];
-const BOT_N = 8, BOT_HP = 100, BOT_RESPAWN = 5.0;
-
-let gunIdx = 0;
-const ammo = GUNS.map((g) => g.mag);
-let fireCd = 0, reloadLeft = 0, reloadFor = -1, firing = false, scoped = false;
-let bloom = 0;                      // 연사로 벌어지는 퍼짐 (0~1)
-let kickP = 0, kickY = 0;           // 지금 카메라에 얹혀 있는 반동량 — 회복할 때 그대로 뺀다
-let hp = 100, kills = 0, shotsFired = 0, shotsHit = 0;
-
-// ── 사거리 감쇠 ────────────────────────────────────────────
-// 사거리 안: 보통 총은 그대로, 샷건은 거리만큼 1.0 → 0.4 로 깎인다.
-// 사거리 밖: 사거리의 35% 를 더 가는 동안 0 까지 떨어진다.
-function rangeMul(g, dist){
- if (dist <= g.range) return g.falloff ? 1 - (dist / g.range) * 0.6 : 1;
- const over = (dist - g.range) / (g.range * 0.35);
- if (over >= 1) return 0;
- return (g.falloff ? 0.4 : 1) * (1 - over);
-}
-
-// ── 레이 ↔ 회전된 박스 (건물 콜라이더) ─────────────────────
-function rayBox(ox, oy, oz, dx, dy, dz, c, maxT){
- const ca = Math.cos(c.a), sa = Math.sin(c.a);
- const lo = toLocal(ox - c.cx, oz - c.cz, ca, sa);
- const ld = toLocal(dx, dz, ca, sa);
- let t0 = 0, t1 = maxT;
- const slab = (p, d, a, b) => {
-  if (Math.abs(d) < 1e-9) return p >= a && p <= b;
-  let s0 = (a - p) / d, s1 = (b - p) / d;
-  if (s0 > s1) { const t = s0; s0 = s1; s1 = t; }
-  if (s0 > t0) t0 = s0;
-  if (s1 < t1) t1 = s1;
-  return t1 >= t0;
- };
- if (!slab(lo[0], ld[0], -c.hw, c.hw)) return -1;
- if (!slab(oy,    dy,    c.y0, c.y1)) return -1;
- if (!slab(lo[1], ld[1], -c.hd, c.hd)) return -1;
- return t0 > 0.02 ? t0 : -1;
-}
-
-// 지형·건물 중 먼저 막는 곳까지의 거리. 아무것도 없으면 maxT.
-function rayWorld(ox, oy, oz, dx, dy, dz, maxT){
- let best = maxT;
- for (let i = 0; i < colliders.length; i++){
-  const t = rayBox(ox, oy, oz, dx, dy, dz, colliders[i], best);
-  if (t > 0 && t < best) best = t;
- }
- // 지형은 성기게 행진하다 지면 아래로 들어가면 이분법으로 좁힌다
- let prev = 0;
- for (let t = 0.6; t < best; t += (t < 60 ? 0.9 : 2.6)){
-  const y = oy + dy*t;
-  if (y - groundAt(ox + dx*t, oz + dz*t) <= 0){
-   let a = prev, b = t;
-   for (let k = 0; k < 14; k++){
-    const m = (a + b) / 2;
-    if (oy + dy*m - groundAt(ox + dx*m, oz + dz*m) <= 0) b = m; else a = m;
-   }
-   if (b < best) best = b;
-   break;
-  }
-  prev = t;
- }
- return best;
-}
-
-// 레이 ↔ 봇 부위 상자. 가장 가까운 부위를 돌려준다.
-function rayBots(ox, oy, oz, dx, dy, dz, maxT){
- let hit = null, best = maxT;
- for (const b of bots){
-  if (!b.alive) continue;
-  const bx = b.pos.x, bz = b.pos.z, by = b.pos.y;    // y = 발밑
-  if (Math.abs(bx - ox) + Math.abs(bz - oz) > maxT + 4) continue;   // 멀면 건너뛴다
-  for (const pt of PARTS){
-   let t0 = 0, t1 = best;
-   const slab = (p, d, a, c2) => {
-    if (Math.abs(d) < 1e-9) return p >= a && p <= c2;
-    let s0 = (a - p) / d, s1 = (c2 - p) / d;
-    if (s0 > s1) { const t = s0; s0 = s1; s1 = t; }
-    if (s0 > t0) t0 = s0;
-    if (s1 < t1) t1 = s1;
-    return t1 >= t0;
-   };
-   if (!slab(ox, dx, bx - pt.r, bx + pt.r)) continue;
-   if (!slab(oy, dy, by + pt.y0, by + pt.y1)) continue;
-   if (!slab(oz, dz, bz - pt.r, bz + pt.r)) continue;
-   if (t0 > 0.02 && t0 < best) { best = t0; hit = { bot: b, part: pt, t: t0 }; }
-  }
- }
- return hit;
-}
-
-// ── 표적 봇 ────────────────────────────────────────────────
-const BOT_MAT = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.9, flatShading:true });
-const bots = [];
-function botGeo(){
- const ps = [], m4 = new THREE.Matrix4();
- const put = (y, w, h, d, color) => {
-  m4.makeScale(w, h, d); m4.setPosition(0, y + h/2, 0);
-  ps.push({ geo: BOX, color, m: m4.clone() });
- };
- put(0.00, 0.22, 0.90, 0.22, 0x33404f);   // 다리
- put(0.92, 0.62, 0.63, 0.34, 0xc2603f);   // 몸통
- put(1.56, 0.30, 0.26, 0.30, 0xe8c9a0);   // 머리
- return mergePieces(ps);
-}
-function botSpawnPos(){
- for (let i = 0; i < 60; i++){
-  const x = (Math.random()*2-1) * 380, z = (Math.random()*2-1) * 380;
-  if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 35) continue;
-  return { x, z };
- }
- return { x: 120, z: 120 };
-}
-function makeBots(){
- const geo = botGeo();
- for (let i = 0; i < BOT_N; i++){
-  const sp = botSpawnPos();
-  const mesh = new THREE.Mesh(geo, BOT_MAT);
-  mesh.castShadow = false;
-  scene.add(mesh);
-  bots.push({ mesh, pos: new THREE.Vector3(sp.x, groundAt(sp.x, sp.z), sp.z),
-              hp: BOT_HP, alive: true, dead: 0, fall: 0, yaw: Math.random()*6.28,
-              tx: sp.x, tz: sp.z, wait: 0, id: i + 1 });
- }
-}
-function botRetarget(b){
- const a = Math.random() * Math.PI * 2, r = 25 + Math.random() * 70;
- b.tx = Math.max(-420, Math.min(420, b.pos.x + Math.cos(a) * r));
- b.tz = Math.max(-420, Math.min(420, b.pos.z + Math.sin(a) * r));
- b.wait = 2 + Math.random() * 4;
-}
-function updateBots(dt){
- for (const b of bots){
-  if (!b.alive){
-   b.dead -= dt;
-   if (b.fall < 1) { b.fall = Math.min(1, b.fall + dt * 2.6); b.mesh.rotation.z = -b.fall * Math.PI/2; }
-   if (b.dead <= 0){                                   // 5초 뒤 다른 자리에서 되살아난다
-    const sp = botSpawnPos();
-    b.pos.set(sp.x, groundAt(sp.x, sp.z), sp.z);
-    b.hp = BOT_HP; b.alive = true; b.fall = 0;
-    b.mesh.rotation.z = 0; b.mesh.visible = true;
-    botRetarget(b);
-   }
-   b.mesh.position.copy(b.pos);
-   continue;
-  }
-  b.wait -= dt;
-  const dx = b.tx - b.pos.x, dz = b.tz - b.pos.z;
-  const d = Math.hypot(dx, dz);
-  if (d < 2 || b.wait <= 0) botRetarget(b);
-  else {
-   const sp = 2.6;
-   b.pos.x += (dx / d) * sp * dt;
-   b.pos.z += (dz / d) * sp * dt;
-   b.yaw = Math.atan2(dx, dz);
-  }
-  b.pos.y = groundAt(b.pos.x, b.pos.z);
-  b.mesh.position.copy(b.pos);
-  b.mesh.rotation.y = b.yaw;
- }
-}
-
-// ── 이펙트 (풀링 — 매번 만들면 끊긴다) ─────────────────────
-const FX_N = 36;
-const FX_MAT = new THREE.MeshBasicMaterial({ color:0xffd27f, transparent:true, opacity:0.9, depthWrite:false });
-const HIT_MAT = new THREE.MeshBasicMaterial({ color:0xff6a4a, transparent:true, opacity:0.95, depthWrite:false });
-const fx = [];
-for (let i = 0; i < FX_N; i++){
- const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), FX_MAT);
- m.visible = false; scene.add(m);
- fx.push({ m, t: 0, life: 0 });
-}
-let fxNext = 0;
-function spawnFx(x, y, z, size, life, onBot){
- const f = fx[fxNext++ % FX_N];
- f.m.material = onBot ? HIT_MAT : FX_MAT;
- f.m.position.set(x, y, z);
- f.m.scale.set(size, size, size);
- f.m.visible = true; f.t = life; f.life = life;
-}
-function updateFx(dt){
- for (const f of fx){
-  if (!f.m.visible) continue;
-  f.t -= dt;
-  if (f.t <= 0) { f.m.visible = false; continue; }
-  f.m.lookAt(playCam.getWorldPosition(new THREE.Vector3()));
-  f.m.material.opacity = 0.95 * (f.t / f.life);
- }
-}
-
-// ── 1인칭 총 모델 (형태만) ─────────────────────────────────
-const VIEW_MAT = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.6, flatShading:true });
-let viewGun = null;
-function buildViewGun(g){
- if (viewGun) { playCam.remove(viewGun); viewGun.geometry.dispose(); }
- const ps = [], m4 = new THREE.Matrix4();
- const put = (x, y, z, w, h, d, color) => {
-  m4.makeScale(w, h, d); m4.setPosition(x, y, z);
-  ps.push({ geo: BOX, color, m: m4.clone() });
- };
- const body = 0x2b3038, metal = 0x4d555f, wood = 0x6b4a32;
- // 총마다 길이·굵기만 다르게 — 텍스처는 쓰지 않는다
- const L = { pistol:[0.26,0.055], smg:[0.42,0.062], rifle:[0.62,0.060],
-             shotgun:[0.60,0.082], sniper:[0.86,0.056] }[g.key];
- put(0, 0, -L[0]/2 - 0.08, L[1], L[1], L[0], metal);        // 총열
- put(0, -0.035, 0.03, 0.085, 0.10, 0.26, body);             // 몸통
- put(0, -0.115, 0.10, 0.07, 0.14, 0.075, body);             // 손잡이
- if (g.key === 'sniper') put(0, 0.075, -0.10, 0.05, 0.05, 0.22, metal);   // 조준경
- if (g.key === 'shotgun') put(0, -0.075, -0.16, 0.055, 0.055, 0.30, wood);
- if (g.key === 'rifle' || g.key === 'smg') put(0, -0.02, 0.19, 0.07, 0.085, 0.18, body);
- viewGun = new THREE.Mesh(mergePieces(ps), VIEW_MAT);
- viewGun.position.set(0.17, -0.15, -0.34);
- viewGun.renderOrder = 2;
- playCam.add(viewGun);
-}
-
-// ── 발사 ───────────────────────────────────────────────────
-const _o = new THREE.Vector3(), _d = new THREE.Vector3();
-const _side = new THREE.Vector3(), _up = new THREE.Vector3(), _wup = new THREE.Vector3(0,1,0);
-function castShot(g){
- playCam.getWorldPosition(_o);
- playCam.getWorldDirection(_d);
- _side.crossVectors(_d, _wup).normalize();
- _up.crossVectors(_side, _d).normalize();
- const sp = g.spread * (1 + bloom * 1.8) * (scoped ? 0.35 : 1);
- const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * sp;
- const dx = _d.x + _side.x*Math.cos(a)*r + _up.x*Math.sin(a)*r;
- const dy = _d.y + _side.y*Math.cos(a)*r + _up.y*Math.sin(a)*r;
- const dz = _d.z + _side.z*Math.cos(a)*r + _up.z*Math.sin(a)*r;
- const len = Math.hypot(dx, dy, dz);
- const ux = dx/len, uy = dy/len, uz = dz/len;
- const maxT = g.range * 1.35;
- const wall = rayWorld(_o.x, _o.y, _o.z, ux, uy, uz, maxT);
- const hit = rayBots(_o.x, _o.y, _o.z, ux, uy, uz, wall);   // 벽보다 가까운 봇만
- const t = hit ? hit.t : wall;
- return { hit, t, px: _o.x + ux*t, py: _o.y + uy*t, pz: _o.z + uz*t };
-}
-function damageBot(b, dmg, tag){
- b.hp -= dmg;
- if (b.hp <= 0 && b.alive){
-  b.alive = false; b.dead = BOT_RESPAWN; b.fall = 0;
-  kills++;
-  pushFeed('<b>처치</b> 표적 ' + b.id + ' · ' + tag);
-  return true;
- }
- return false;
-}
-function shoot(){
- const g = GUNS[gunIdx];
- if (reloadLeft > 0 || fireCd > 0) return;
- if (ammo[gunIdx] <= 0) { startReload(); return; }
- ammo[gunIdx]--;
- fireCd = g.rate;
- shotsFired++;
- let any = false, killed = 0, bestTag = '';
- for (let i = 0; i < (g.pellets || 1); i++){
-  const r = castShot(g);
-  if (r.hit){
-   const dmg = g.dmg * r.hit.part.mul * rangeMul(g, r.t);
-   if (dmg > 0){
-    any = true; bestTag = r.hit.part.tag;
-    if (damageBot(r.hit.bot, dmg, bestTag)) killed++;
-   }
-   spawnFx(r.px, r.py, r.pz, 0.28, 0.16, true);
-  } else {
-   spawnFx(r.px, r.py, r.pz, 0.22, 0.20, false);
-  }
- }
- if (any) { shotsHit++; showHitmark(); }
- // 총구 화염 — 총 끝 조금 앞
- playCam.getWorldPosition(_o); playCam.getWorldDirection(_d);
- spawnFx(_o.x + _d.x*0.9, _o.y + _d.y*0.9 - 0.1, _o.z + _d.z*0.9, 0.34, 0.05, false);
- // 반동 — 위로 차고 좌우로 조금 흔들린다. 아래 recover() 가 같은 양을 되돌린다
- const k = g.kick * 0.012;
- kickP += k; kickY += (Math.random() - 0.5) * k * 0.7;
- pitchObject.rotation.x += k;
- yawObject.rotation.y += (Math.random() - 0.5) * k * 0.7;
- bloom = Math.min(1, bloom + (g.pellets > 1 ? 0.5 : 0.22));
- hudDirty = true;
-}
-function startReload(){
- const g = GUNS[gunIdx];
- if (reloadLeft > 0 || ammo[gunIdx] >= g.mag) return;
- reloadLeft = g.reload; reloadFor = gunIdx;
- hudDirty = true;
-}
-function switchGun(i){
- if (i === gunIdx || i < 0 || i >= GUNS.length) return;
- gunIdx = i; reloadLeft = 0; reloadFor = -1;
- fireCd = Math.max(fireCd, 0.25);        // 바꾸는 동안은 못 쏜다
- setScope(false);
- buildViewGun(GUNS[i]);
- hudDirty = true;
-}
-function setScope(on){
- const g = GUNS[gunIdx];
- const want = !!(on && g.scope);
- if (want === scoped) return;
- scoped = want;
- playCam.fov = scoped ? 22 : 75;
- playCam.updateProjectionMatrix();
- scopeEl.style.display = scoped ? 'block' : 'none';
- if (viewGun) viewGun.visible = !scoped;
-}
-let hitmarkT = 0;
-function showHitmark(){ hitmarkT = 0.14; hitmarkEl.style.display = 'block'; hitmarkEl.style.opacity = '1'; }
-const feedLines = [];
-function pushFeed(html){
- feedLines.push({ html, t: 4 });
- if (feedLines.length > 4) feedLines.shift();
- feedEl.innerHTML = feedLines.map((f) => '<div>' + f.html + '</div>').join('');
-}
-function combat(dt){
- if (fireCd > 0) fireCd -= dt;
- if (reloadLeft > 0){
-  reloadLeft -= dt;
-  if (reloadLeft <= 0){ ammo[reloadFor] = GUNS[reloadFor].mag; reloadFor = -1; hudDirty = true; }
- }
- if (firing && locked) shoot();
- // 반동 회복 — 얹어 둔 만큼만 되돌린다. 그 사이 마우스로 움직인 건 건드리지 않는다
- const back = Math.min(1, dt * 7);
- if (Math.abs(kickP) > 1e-5){ pitchObject.rotation.x -= kickP * back; kickP *= (1 - back); }
- if (Math.abs(kickY) > 1e-5){ yawObject.rotation.y -= kickY * back; kickY *= (1 - back); }
- bloom = Math.max(0, bloom - dt * 1.6);
- if (hitmarkT > 0){
-  hitmarkT -= dt;
-  hitmarkEl.style.opacity = String(Math.max(0, hitmarkT / 0.14));
-  if (hitmarkT <= 0) hitmarkEl.style.display = 'none';
- }
- for (let i = feedLines.length - 1; i >= 0; i--){
-  feedLines[i].t -= dt;
-  if (feedLines[i].t <= 0){ feedLines.splice(i, 1);
-   feedEl.innerHTML = feedLines.map((f) => '<div>' + f.html + '</div>').join(''); }
- }
- // 크로스헤어 — 지금 퍼짐을 화면 간격으로 (수직 화각 75° 기준)
- const g = GUNS[gunIdx];
- const sp = g.spread * (1 + bloom * 1.8) * (scoped ? 0.35 : 1);
- const gap = Math.max(3, Math.round(sp / Math.tan(playCam.fov * Math.PI / 360) * (window.innerHeight / 2)));
- chBars[0].style.cssText = 'top:' + (-gap - 9) + 'px;left:0';
- chBars[1].style.cssText = 'top:' + gap + 'px;left:0';
- chBars[2].style.cssText = 'left:' + (-gap - 9) + 'px;top:0';
- chBars[3].style.cssText = 'left:' + gap + 'px;top:0';
-}
-
-// ══════════════════════════════════════════════════════════════
-//  HUD
-// ══════════════════════════════════════════════════════════════
-// 매 프레임 innerHTML 을 새로 만들면 글자가 깜빡인다. 0.2초마다만 다시 그린다.
-let fpsAccum = 0, fpsFrames = 0, fpsShown = 0, hudAccum = 0;
-let hudDirty = true;
-// 탄약·무기·체력은 바뀔 때만 다시 그린다 (매 프레임 innerHTML 은 깜빡인다)
-function drawWeaponHud(){
- const g = GUNS[gunIdx];
- wepEl.querySelector('.nm').textContent = g.name;
- wepEl.querySelector('.am').innerHTML = ammo[gunIdx] + ' <s>/ ' + g.mag + '</s>';
- wepEl.querySelector('.rl').textContent = reloadLeft > 0 ? '재장전…' : '';
- wepEl.querySelector('.list').innerHTML = GUNS.map((q, i) =>
-   (i === gunIdx ? '<b>' + (i+1) + ' ' + q.name + '</b>' : (i+1) + ' ' + q.name)).join('  ');
- vitEl.querySelector('s').style.width = Math.max(0, hp) + '%';
- vitEl.querySelector('.tx').textContent = 'HP ' + Math.max(0, Math.round(hp))
-   + '   ·   처치 ' + kills + '   ·   명중 '
-   + (shotsFired ? Math.round(shotsHit / shotsFired * 100) : 0) + '%';
-}
-function updateHud(dt){
- if (hudDirty || reloadLeft > 0) { drawWeaponHud(); hudDirty = false; }
- fpsAccum += dt; fpsFrames++;
- if (fpsAccum >= 0.5) { fpsShown = Math.round(fpsFrames / fpsAccum); fpsAccum = 0; fpsFrames = 0; }
- hudAccum += dt;
- if (hudAccum < 0.2) return;
- hudAccum = 0;
- const p = yawObject.position;
- const feet = p.y - EYE_HEIGHT;
- const edge = Math.max(Math.abs(p.x), Math.abs(p.z));
- const nearEdge = edge > FENCE - 12;
- const r = renderer.info.render;
- hudEl.innerHTML =
-   'x <b>' + p.x.toFixed(1) + '</b>  z <b>' + p.z.toFixed(1) + '</b>  높이 <b>' + feet.toFixed(1) + '</b>'
- + '<br>fps <b>' + fpsShown + '</b>  ·  드로우콜 ' + r.calls + '  ·  삼각형 ' + r.triangles.toLocaleString()
- + '<br>' + (onGround ? '지면' : '공중') + '  ·  속도 ' + velocity.length().toFixed(1) + ' m/s'
- + '<br>표적 ' + bots.filter((b) => b.alive).length + ' / ' + bots.length + ' 생존'
- + (nearEdge ? '  <span class="warn">맵 경계</span>' : '');
-}
-
-// ══════════════════════════════════════════════════════════════
-//  시작
-// ══════════════════════════════════════════════════════════════
-buildTerrain();      // 격자를 먼저 만들어야 groundAt 이 제대로 답한다
-buildBuildings();    // 건물은 그 격자 위에 앉힌다
-buildBoundary();
-makeBots();                  // 표적 8기 — 지형이 있어야 발밑 높이를 안다
-buildViewGun(GUNS[gunIdx]);  // 1인칭 총 모델
-yawObject.position.set(SPAWN.x, groundAt(SPAWN.x, SPAWN.z) + EYE_HEIGHT, SPAWN.z);
-
-const clock = new THREE.Clock();
-function animate(){
- requestAnimationFrame(animate);
- const dt = Math.min(clock.getDelta(), 0.05);   // 탭을 떠났다 오면 dt 가 폭주한다
- if (started) {
-  physics(dt);
-  combat(dt);
-  updateBots(dt);
-  updateFx(dt);
-  moveSunWithPlayer();
- }
- renderer.render(scene, playCam);
- if (started) updateHud(dt);
-}
-animate();
-
-// 검증용 — 헤드리스에서 좌표를 넣고 확인할 때 쓴다. 게임 동작에는 영향 없다.
-window.__br = { MAP, BUILDINGS, colliders, groundAt, terrainSlope, terrainHeight, toLocal, toWorld,
-                yawObject, pitchObject, physics, renderer, scene, playCam, FENCE, SPAWN,
-                get onGround(){ return onGround; },
-                // 02 — 총기 검증용
-                GUNS, PARTS, bots, rangeMul, castShot, rayWorld, rayBots, shoot, startReload,
-                switchGun, setScope, combat, updateBots,
-                get ammo(){ return ammo.slice(); },
-                get gunIdx(){ return gunIdx; },
-                get scoped(){ return scoped; },
-                get fireCd(){ return fireCd; },
-                get reloadLeft(){ return reloadLeft; },
-                get kills(){ return kills; },
-                set started(v){ started = v; },
-                set locked(v){ locked = v; } };
-</script>
-</body>
-</html>
+<script src="game.js"></script>
